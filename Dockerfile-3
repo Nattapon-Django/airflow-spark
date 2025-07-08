@@ -1,0 +1,52 @@
+FROM apache/airflow:2.8.1-python3.11
+
+# ==== Root user สำหรับติดตั้ง OS packages และ Oracle Instant Client ====
+USER root
+
+# 1. ติดตั้ง Java, libaio1 และเครื่องมือ unzip
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        openjdk-17-jre-headless \
+        libaio1 \
+        unzip \
+    && apt-get autoremove -yqq --purge \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. คัดลอก Oracle Instant Client ZIP files
+COPY instantclient-basic-linux.x64-23.8.0.25.04.zip /tmp/instantclient-basic.zip
+COPY instantclient-sqlplus-linux.x64-23.8.0.25.04.zip /tmp/instantclient-sqlplus.zip
+
+# 3. ติดตั้ง Oracle Instant Client
+RUN mkdir -p /opt/oracle && \
+    unzip -o /tmp/instantclient-basic.zip -d /opt/oracle && \
+    unzip -o /tmp/instantclient-sqlplus.zip -d /opt/oracle && \
+    rm /tmp/instantclient-basic.zip /tmp/instantclient-sqlplus.zip
+
+# 4. ตั้งค่าตัวแปรแวดล้อมสำหรับ Oracle Instant Client
+ENV LD_LIBRARY_PATH=/opt/oracle/instantclient_23_8:$LD_LIBRARY_PATH
+ENV PATH=/opt/oracle/instantclient_23_8:$PATH
+
+# 5. สำหรับระบบที่ใช้ ldconfig
+RUN echo /opt/oracle/instantclient_23_8 > /etc/ld.so.conf.d/oracle-instantclient.conf && \
+    ldconfig
+
+# ==== กลับมาใช้ user airflow สำหรับติดตั้ง Python packages ====
+USER airflow
+
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV AIRFLOW_VERSION=2.8.1
+
+RUN pip install --no-cache-dir \
+      "apache-airflow==${AIRFLOW_VERSION}" \
+      "apache-airflow-providers-apache-spark==2.1.3" \
+      "pyspark==3.5.0" \
+      "apache-airflow-providers-oracle>=3.9.0" \
+      "oracledb" \
+      "pysftp"\
+      "papermill"\
+      "apache-airflow-providers-papermill"\
+      'acryl-datahub-airflow-plugin[plugin-v2]'\
+      "acryl-datahub==0.14.1.12" \
+      "datahub[datahub-rest]" \
+      "datahub[datahub-rest-apis]" \
